@@ -60,6 +60,11 @@ namespace lgfx
 
       // また、 pixel_clock * output_divider = vco_clock
       // 制約: 400MHz <= vco_clock <= 1200MHz であること。800MHzが理想値。
+
+      // ビデオ処理回路の駆動にピクセルクロックの半分を使うかどうか。デフォルトはfalse
+      // Full HD @ 60Hz (ピクセルクロック = 148.5MHz) の映像信号のみを受け付ける Xreal Airのような機器に対して、
+      // FPGA側ビデオ出力は半分のクロックで動いており、2ピクセルクロック分同じデータを出力していることにして対応するために使う。
+      bool use_half_clock = false;
     };
 
     Panel_M5HDMI(void)
@@ -222,7 +227,7 @@ namespace lgfx
         uint8_t id[3];
       };
 
-      HDMI_Trans(const lgfx::Bus_I2C::config_t& i2c_config) : HDMI_Trans_config(i2c_config) {}
+      HDMI_Trans(const lgfx::Bus_I2C::config_t& i2c_config);
       HDMI_Trans(const HDMI_Trans&) = delete;
       HDMI_Trans(HDMI_Trans&&) = delete;
       ChipID readChipID(void);

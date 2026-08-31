@@ -38,6 +38,7 @@ namespace lgfx
     bus_parallel16,
     bus_stream,
     bus_image_push,
+    bus_dsi,
   };
 
   struct IBus
@@ -87,7 +88,12 @@ namespace lgfx
 
     /// DMA用のバッファを取得する。バスの実装によっては内部的には2個のバッファを交互に使用する。;
     /// 繰返し実行した場合は前回と異なるポインタを得るが、前々回と同じになる場合がある点に注意すること。;
+    /// メモリ枯渇時は nullptr を返しうるため、呼び出し側は必ず結果を確認すること。;
     virtual uint8_t* getDMABuffer(uint32_t length) = 0;
+
+    /// DMA用のバッファを事前確保する。以降、この長さまでの getDMABuffer は再確保なしで成功する。;
+    /// 内部バッファを持たないバス実装では何もしない。;
+    virtual bool reserveDMABuffer(uint32_t) { return true; }
 
     /// 未送信のデータがあれば送信を開始する。;
     virtual void flush(void) = 0;
@@ -112,7 +118,7 @@ namespace lgfx
     virtual void endRead(void) = 0;
     virtual uint32_t readData(uint_fast8_t bit_length) = 0;
     virtual bool readBytes(uint8_t* dst, uint32_t length, bool use_dma = false) = 0;
-    virtual bool readBytes(uint8_t* dst, uint32_t length, bool use_dma, bool last_nack) { return readBytes(dst, length, use_dma); }
+    virtual bool readBytes(uint8_t* dst, uint32_t length, bool use_dma, bool last_nack) { (void)last_nack; return readBytes(dst, length, use_dma); }
     virtual void readPixels(void* dst, pixelcopy_t* pc, uint32_t length) = 0;
   };
 
@@ -149,9 +155,9 @@ namespace lgfx
   struct Bus_ImagePush : public Bus_NULL
   {
     bus_type_t busType(void) const override { return bus_type_t::bus_image_push; }
-    virtual void setImageBuffer(void* buffer, color_depth_t depth) {}
-    virtual void setBrightness(uint8_t brightness) {}
-    virtual void setInvert(uint8_t invert) {}
+    virtual void setImageBuffer(void* buffer, color_depth_t depth) { (void)buffer; (void)depth; }
+    virtual void setBrightness(uint8_t brightness) { (void)brightness; }
+    virtual void setInvert(uint8_t invert) { (void)invert; }
   };
 
 //----------------------------------------------------------------------------

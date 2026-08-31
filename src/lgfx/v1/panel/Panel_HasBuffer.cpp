@@ -45,9 +45,14 @@ namespace lgfx
 
     auto len = _get_buffer_length();
     if (_buf) heap_free(_buf);
-    _buf = static_cast<uint8_t*>(heap_alloc_dma(len));
+    if (len) {
+      _buf = static_cast<uint8_t*>(heap_alloc_dma(len));
+      if (!_buf) {
+        return false;
+      }
+    }
 
-    return ((_buf != nullptr) && (Panel_Device::init(use_reset)));
+    return (Panel_Device::init(use_reset));
   }
 
   void Panel_HasBuffer::beginTransaction(void)
@@ -62,8 +67,9 @@ namespace lgfx
   {
     if (!_in_transaction) return;
     _in_transaction = false;
-    _bus->endTransaction();
+    _bus->wait();
     cs_control(true);
+    _bus->endTransaction();
   }
 
   void Panel_HasBuffer::setRotation(uint_fast8_t r)

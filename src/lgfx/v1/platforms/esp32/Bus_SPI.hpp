@@ -19,7 +19,9 @@ Contributors:
 
 #include <string.h>
 
-#if defined (CONFIG_IDF_TARGET_ESP32S3) && __has_include(<esp32s3/rom/lldesc.h>)
+#if __has_include(<rom/lldesc.h>)
+ #include <rom/lldesc.h>
+#elif defined (CONFIG_IDF_TARGET_ESP32S3) && __has_include(<esp32s3/rom/lldesc.h>)
  #include <esp32s3/rom/lldesc.h>
 #elif defined (CONFIG_IDF_TARGET_ESP32S2) && __has_include(<esp32s2/rom/lldesc.h>)
  #include <esp32s2/rom/lldesc.h>
@@ -27,8 +29,6 @@ Contributors:
  #include <esp32c3/rom/lldesc.h>
 #elif __has_include(<esp32/rom/lldesc.h>)
  #include <esp32/rom/lldesc.h>
-#else
- #include <rom/lldesc.h>
 #endif
 
 #if __has_include(<esp_private/spi_common_internal.h>)
@@ -50,7 +50,7 @@ Contributors:
 #endif
 
 #ifndef LGFX_ESP32_SPI_DMA_CH
-#define LGFX_ESP32_SPI_DMA_CH 0
+ #define LGFX_ESP32_SPI_DMA_CH 0
 #endif
 
 #include "../../Bus.hpp"
@@ -81,18 +81,33 @@ namespace lgfx
       int16_t pin_miso = -1;
       int16_t pin_mosi = -1;
       int16_t pin_dc   = -1;
+      int16_t pin_io0  = -1;// Quad spi
+      int16_t pin_io1  = -1;// Quad spi
+      int16_t pin_io2  = -1;// Quad spi
+      int16_t pin_io3  = -1;// Quad spi
       uint8_t spi_mode = 0;
       bool spi_3wire = true;
       bool use_lock = true;
       uint8_t dma_channel = LGFX_ESP32_SPI_DMA_CH;
 #if !defined (CONFIG_IDF_TARGET) || defined (CONFIG_IDF_TARGET_ESP32)
-      spi_host_device_t spi_host = VSPI_HOST;
+     #if defined (VSPI_HOST)
+       spi_host_device_t spi_host = VSPI_HOST;
+     #elif defined (SPI3_HOST)
+       spi_host_device_t spi_host = SPI3_HOST;
+     #else
+       spi_host_device_t spi_host = SPI2_HOST;
+     #endif
 #else
       spi_host_device_t spi_host = SPI2_HOST;
 #endif
     };
 
     constexpr Bus_SPI(void) = default;
+#if defined (ARDUINO) && (defined (CONFIG_IDF_TARGET_ESP32P4) \
+ || defined (CONFIG_IDF_TARGET_ESP32C5) || defined (CONFIG_IDF_TARGET_ESP32C6) \
+ || defined (CONFIG_IDF_TARGET_ESP32C61))
+    ~Bus_SPI(void) override;
+#endif
 
     const config_t& config(void) const { return _cfg; }
 
@@ -123,6 +138,7 @@ namespace lgfx
     void addDMAQueue(const uint8_t* data, uint32_t length) override;
     void execDMAQueue(void) override;
     uint8_t* getDMABuffer(uint32_t length) override { return _flip_buffer.getBuffer(length); }
+    bool reserveDMABuffer(uint32_t length) override { return _flip_buffer.reserve(length); }
 
     void beginRead(uint_fast8_t dummy_bits) override;
     void beginRead(void) override;
@@ -132,6 +148,8 @@ namespace lgfx
     void readPixels(void* dst, pixelcopy_t* pc, uint32_t length) override;
 
   private:
+
+    bool _is_quad_spi = false;
 
     static __attribute__ ((always_inline)) inline volatile uint32_t* reg(uint32_t addr) { return (volatile uint32_t *)ETS_UNCACHED_ADDR(addr); }
     __attribute__ ((always_inline)) inline void exec_spi(void) {        *_spi_cmd_reg = SPI_EXECUTE; }
@@ -180,6 +198,10 @@ namespace lgfx
     volatile uint32_t* _spi_cmd_reg = nullptr;
     volatile uint32_t* _spi_user_reg = nullptr;
     volatile uint32_t* _spi_dma_out_link_reg = nullptr;
+    // P4 (AXI_DMA) と C5/C61 (AHB_DMA) はディスクリプタアドレスを OUT_LINK と別のレジスタへ書く;
+    #if defined (CONFIG_IDF_TARGET_ESP32P4) || defined (CONFIG_IDF_TARGET_ESP32C5) || defined (CONFIG_IDF_TARGET_ESP32C61)
+    volatile uint32_t* _spi_dma_out_link2_reg = nullptr;
+    #endif
     volatile uint32_t* _spi_dma_outstatus_reg = nullptr;
     volatile uint32_t* _clear_dma_reg = nullptr;
     uint32_t _last_freq_apb = 0;

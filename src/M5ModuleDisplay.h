@@ -24,6 +24,10 @@
 #include "lgfx/v1/panel/Panel_M5HDMI.hpp"
 #include "M5GFX.h"
 
+#if defined (SDL_h_) || defined (CONFIG_IDF_TARGET_ESP32P4) || defined (CONFIG_IDF_TARGET_ESP32S3) || defined (CONFIG_IDF_TARGET_ESP32) || !defined (CONFIG_IDF_TARGET) 
+#define M5MODULEDISPLAY_ENABLED
+#endif
+
 #ifndef M5MODULEDISPLAY_LOGICAL_WIDTH
 #define M5MODULEDISPLAY_LOGICAL_WIDTH 1280
 #endif
@@ -100,7 +104,8 @@ public:
       return true;
     }
 
-#if !defined (CONFIG_IDF_TARGET_ESP32C3)
+#if defined (M5MODULEDISPLAY_ENABLED)
+#undef M5MODULEDISPLAY_ENABLED
 
 #if defined (SDL_h_)
     auto p = new lgfx::Panel_sdl();
@@ -120,7 +125,18 @@ public:
 
 #else
 
-#if defined (CONFIG_IDF_TARGET_ESP32S3)
+#if defined (CONFIG_IDF_TARGET_ESP32P4)
+ #define M5GFX_SPI_HOST SPI2_HOST
+    // for Tab5
+    int i2c_port = 1;
+    int i2c_sda  = GPIO_NUM_31;
+    int i2c_scl  = GPIO_NUM_32;
+    int spi_cs   = GPIO_NUM_48;
+    int spi_mosi = GPIO_NUM_18;
+    int spi_miso = GPIO_NUM_19;
+    int spi_sclk = GPIO_NUM_5;
+
+#elif defined (CONFIG_IDF_TARGET_ESP32S3)
  #define M5GFX_SPI_HOST SPI2_HOST
 
     // for CoreS3
@@ -133,7 +149,7 @@ public:
     int spi_sclk = GPIO_NUM_36;
 
 #elif !defined (CONFIG_IDF_TARGET) || defined (CONFIG_IDF_TARGET_ESP32)
- #define M5GFX_SPI_HOST VSPI_HOST
+ #define M5GFX_SPI_HOST SPI3_HOST
 
     int i2c_port = 1;
     int i2c_sda  = GPIO_NUM_21;
@@ -143,7 +159,8 @@ public:
     int spi_mosi = GPIO_NUM_23;
     int spi_sclk = GPIO_NUM_18;
 
-    if (0x03 == m5gfx::i2c::readRegister8(1, 0x34, 0x03, 400000))
+    auto axp_id = m5gfx::i2c::readRegister8(1, 0x34, 0x03, 400000);
+    if (axp_id == 0x03 || axp_id == 0x4A) // AXP192 & AXP2101
     { // M5Stack Core2 / Tough
 #if defined ( ESP_LOGD )
       ESP_LOGD("LGFX","ModuleDisplay with Core2/Tough");

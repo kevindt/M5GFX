@@ -48,10 +48,18 @@ namespace lgfx
 #endif
 //----------------------------------------------------------------------------
 
-#if !defined (ARDUINO) || defined (ARDUINO_ARCH_MBED_RP2040) || defined (ARDUINO_ARCH_RP2040)
+#if !defined (ARDUINO) || defined (ARDUINO_ARCH_MBED_RP2040) || defined (ARDUINO_ARCH_RP2040) || (USE_PICO_SDK)
 #define LGFX_PRINTF_ENABLED
 #endif
 
+  /// Callback for rendering emoji glyphs not present in the active font.
+  /// @param gfx   Display to draw on
+  /// @param x     X position
+  /// @param y     Y position
+  /// @param code  Unicode codepoint
+  /// @param font_height  Target height in pixels (already scaled by size_y)
+  /// @return pixel width actually drawn, or 0 if the glyph could not be rendered
+  typedef int32_t (*emoji_draw_cb_t)(LGFXBase* gfx, int32_t x, int32_t y, uint32_t code, int32_t font_height);
 
   class LGFXBase
 #if defined (ARDUINO)
@@ -263,6 +271,33 @@ namespace lgfx
     LGFX_INLINE_T void drawGradientVLine( int32_t x, int32_t y, int32_t h, const T& colorstart, const T& colorend ) { drawGradientLine( x, y, x, y + h - 1, colorstart, colorend ); }
     LGFX_INLINE_T void drawGradientLine ( int32_t x0, int32_t y0, int32_t x1, int32_t y1, const T& colorstart, const T& colorend ) { draw_gradient_line( x0, y0, x1, y1, convert_to_rgb888(colorstart), convert_to_rgb888(colorend) ); }
 
+
+//----------------------------------------------------------------------------
+
+    template <const uint32_t N>
+                  const colors_t createGradient( const rgb888_t(&colors)[N] )                   { const colors_t ret = { colors, N };     return ret; }
+                  const colors_t createGradient( const rgb888_t* colors, const uint32_t count ) { const colors_t ret = { colors, count }; return ret; }
+    template <typename T=rgb888_t>
+                  T mapGradient( float val, float min, float max, const colors_t gr )                      { rgb888_t c=map_gradient(val, min, max, gr);            return T(c.r, c.g, c.b); }
+    template <typename T=rgb888_t>
+                  T mapGradient( float val, float min, double max, const rgb888_t *colors, uint32_t count ) { rgb888_t c=map_gradient(val, min, max, colors, count); return T(c.r, c.g, c.b); }
+
+    LGFX_INLINE_T void drawSmoothLine   ( int32_t x0, int32_t y0, int32_t x1, int32_t y1, const T& color )                     { drawWideLine( x0, y0, x1, y1, 0.5f, color); }
+                  void drawGradientLine ( int32_t x0, int32_t y0, int32_t x1, int32_t y1, const colors_t colors )              { draw_gradient_line(x0, y0, x1, y1, colors); }
+    LGFX_INLINE_T void drawWideLine     ( int32_t x0, int32_t y0, int32_t x1, int32_t y1, float r, const T& color)             { draw_wedgeline(x0, y0, x1, y1, r, r, convert_to_rgb888(color)); }
+                  void drawWideLine     ( int32_t x0, int32_t y0, int32_t x1, int32_t y1, float r, const colors_t colors )     { draw_gradient_wedgeline(x0, y0, x1, y1, r, r, colors); }
+    LGFX_INLINE_T void drawWedgeLine    ( int32_t x0, int32_t y0, int32_t x1, int32_t y1, float r0, float r1, const T& color ) { draw_wedgeline(x0, y0, x1, y1, r0, r1, convert_to_rgb888(color)); }
+                  void drawWedgeLine    ( int32_t x0, int32_t y0, int32_t x1, int32_t y1, float r0, float r1, const colors_t colors ) { draw_gradient_wedgeline(x0, y0, x1, y1, r0, r1, colors); }
+    LGFX_INLINE_T void drawSpot         ( int32_t x, int32_t y, float r, const T& color )    { draw_wedgeline(x, y, x, y, r, r, convert_to_rgb888(color)); }
+                  void drawGradientSpot ( int32_t x, int32_t y, float r, const colors_t gr ) { draw_gradient_wedgeline(x, y, x, y, r, r, gr); }
+                  void drawGradientHLine( int32_t x, int32_t y, uint32_t w, const colors_t colors ) { draw_gradient_line(x, y, x+w, y, colors); }
+                  void drawGradientVLine( int32_t x, int32_t y, uint32_t h, const colors_t colors ) { draw_gradient_line(x, y, x, y+h, colors); }
+                  void fillGradientRect ( int32_t x, int32_t y, uint32_t w, uint32_t h, const colors_t colors, fill_style_t style=RADIAL)        { fill_rect_gradient(x, y, w, h, colors, style); }
+    LGFX_INLINE_T void fillGradientRect ( int32_t x, int32_t y, uint32_t w, uint32_t h, const T& start, const T& end, fill_style_t style=RADIAL) { fill_rect_gradient(x, y, w, h, convert_to_rgb888(start), convert_to_rgb888(end), style); }
+
+//----------------------------------------------------------------------------
+
+
     LGFX_INLINE_T void fillSmoothRoundRect(int32_t x, int32_t y, int32_t w, int32_t h, int32_t r, const T& color) { setColor(color); fillSmoothRoundRect(x, y, w, h, r); }
                   void fillSmoothRoundRect(int32_t x, int32_t y, int32_t w, int32_t h, int32_t r);
 
@@ -272,10 +307,10 @@ namespace lgfx
     LGFX_INLINE_T void fillScreen  ( const T& color) { setColor(color); fillRect(0, 0, width(), height()); }
     LGFX_INLINE   void fillScreen  ( void )          {                  fillRect(0, 0, width(), height()); }
 
-    LGFX_INLINE_T void clear       ( const T& color) { setBaseColor(color); clear(); }
-    LGFX_INLINE   void clear       ( void )          { setColor(_base_rgb888); fillScreen(); }
-    LGFX_INLINE_T void clearDisplay( const T& color) { setBaseColor(color); clear(); }
-    LGFX_INLINE   void clearDisplay( void )          { setColor(_base_rgb888); fillScreen(); }
+    LGFX_INLINE_T void clear       ( const T& color) { setBaseColor(color); clearDisplay(); }
+    LGFX_INLINE   void clear       ( void )          { clearDisplay(); }
+    LGFX_INLINE_T void clearDisplay( const T& color) { setBaseColor(color); clearDisplay(); }
+    LGFX_INLINE   void clearDisplay( void )          { if (isEPD()) { waitDisplay(); fillScreen(~_base_rgb888); waitDisplay(); } fillScreen(_base_rgb888); }
 
     LGFX_INLINE   void  setPivot(float x, float y) { _xpivot = x; _ypivot = y; }
     LGFX_INLINE   float getPivotX(void) const { return _xpivot; }
@@ -294,7 +329,7 @@ namespace lgfx
     [[deprecated("use isBusShared()")]]
     LGFX_INLINE   bool isSPIShared(void) const { return _panel->isBusShared(); }
                   void display(int32_t x, int32_t y, int32_t w, int32_t h);
-    LGFX_INLINE   void display(void) { _panel->display(0, 0, 0, 0); }
+    LGFX_INLINE   void display(void) { display(0, 0, 0, 0); }
     LGFX_INLINE   void waitDisplay(void) { _panel->waitDisplay(); }
     LGFX_INLINE   bool displayBusy(void) { return _panel->displayBusy(); }
     LGFX_INLINE   void setAutoDisplay(bool flg) { _panel->setAutoDisplay(flg); }
@@ -539,6 +574,35 @@ namespace lgfx
 
 //----------------------------------------------------------------------------
 
+    // T == bgra8888_t or argb8888_t
+    template<typename T>
+    void pushAlphaImage(int32_t x, int32_t y, int32_t w, int32_t h, const T* data)
+    {
+      auto pc = create_pc(data);
+
+      // not support 1, 2, 4, and palette mode.
+      if (pc.dst_bits < 8 || this->hasPalette()) { return; }
+
+      if (pc.dst_bits > 16) {
+        if (pc.dst_depth == rgb888_3Byte) {
+          pc.fp_copy = pixelcopy_t::blend_rgb_fast<bgr888_t, T>;
+        } else {
+          pc.fp_copy = pixelcopy_t::blend_rgb_fast<bgr666_t, T>;
+        }
+      } else {
+        if (pc.dst_depth == rgb565_2Byte) {
+          pc.fp_copy = pixelcopy_t::blend_rgb_fast<swap565_t, T>;
+        } else { // src_depth == rgb332_1Byte:
+          pc.fp_copy = pixelcopy_t::blend_rgb_fast<rgb332_t, T>;
+        }
+      }
+      pushAlphaImage(x, y, w, h, &pc);
+    }
+
+    void pushAlphaImage(int32_t x, int32_t y, int32_t w, int32_t h, pixelcopy_t *param);
+
+//----------------------------------------------------------------------------
+
     /// read RGB565 16bit color
     uint16_t readPixel(int32_t x, int32_t y)
     {
@@ -621,6 +685,8 @@ namespace lgfx
     uint32_t getTextPadding(void) const { return _text_style.padding_x; }
     void setTextWrap( bool wrapX, bool wrapY = false) { _textwrap_x = wrapX; _textwrap_y = wrapY; }
     void setTextScroll(bool scroll) { _textscroll = scroll; if (_cursor_x < this->_sx) { _cursor_x = this->_sx; } if (_cursor_y < this->_sy) { _cursor_y = this->_sy; } }
+    void setEmojiCallback(emoji_draw_cb_t cb) { _emoji_draw_cb = cb; }
+    emoji_draw_cb_t getEmojiCallback(void) const { return _emoji_draw_cb; }
 
     template<typename T>
     void setTextColor(T color) {
@@ -740,23 +806,28 @@ namespace lgfx
     void setFont(const IFont* font);
 
     /// load VLW font
-    bool loadFont(const uint8_t* array);
+    bool loadFont(const uint8_t* array, IFont::font_type_t font_type = IFont::font_type_t::ft_vlw);
 
     /// load vlw font from filesystem.
-    bool loadFont(const char *path)
+    bool loadFont(const char *path, IFont::font_type_t font_type = IFont::font_type_t::ft_vlw)
     {
-      this->unloadFont();
-      this->_font_file.reset(_create_data_wrapper());
-      return load_font_with_path(path);
+      unloadFont();
+      _font_file.reset(_create_data_wrapper());
+      return load_font_with_path(path, font_type);
     }
 
 
     template <typename T>
-    bool loadFont(T &fs, const char *path)
+    bool loadFont(T &fs, const char *path, IFont::font_type_t font_type = IFont::font_type_t::ft_vlw)
     {
       unloadFont();
       _font_file.reset(new DataWrapperT<T>(&fs));
-      return load_font_with_path(path);
+      return load_font_with_path(path, font_type);
+    }
+
+    bool loadFont(DataWrapper* data, IFont::font_type_t font_type = IFont::font_type_t::ft_vlw)
+    {
+      return load_font(data, font_type);
     }
 
     /// unload VLW font
@@ -846,7 +917,7 @@ namespace lgfx
       qrcode(string.c_str(), x, y, width, version);
     }
 #endif
-    void qrcode(const char *string, int32_t x = -1, int32_t y = -1, int32_t width = -1, uint8_t version = 1);
+    void qrcode(const char *string, int32_t x = -1, int32_t y = -1, int32_t width = -1, uint8_t version = 1,bool margin = false);
 
   #define LGFX_FUNCTION_GENERATOR(drawImg, draw_img) \
    protected: \
@@ -944,7 +1015,7 @@ namespace lgfx
     int32_t _sx = 0, _sy = 0, _sw = 0, _sh = 0; // for scroll zone
     int32_t _clip_l = 0, _clip_r = -1, _clip_t = 0, _clip_b = -1; // clip rect
 
-    uint32_t _base_rgb888 = 0;  // gap fill colour for clear and scroll zone 
+    uint32_t _base_rgb888 = 0;  // gap fill colour for clear and scroll zone
     raw_color_t _color = 0xFFFFFFU;
 
     color_conv_t _write_conv;
@@ -961,9 +1032,10 @@ namespace lgfx
     { utf8_state0 = 0
     , utf8_state1 = 1
     , utf8_state2 = 2
+    , utf8_state3 = 3
     };
     utf8_decode_state_t _decoderState = utf8_state0;   // UTF8 decoder state
-    uint16_t _unicode_buffer = 0;   // Unicode code-point buffer
+    uint32_t _unicode_buffer = 0;   // Unicode code-point buffer
 
     int32_t _cursor_x = 0;  // print text cursor
     int32_t _cursor_y = 0;
@@ -972,6 +1044,8 @@ namespace lgfx
     TextStyle _text_style;
     FontMetrics _font_metrics = { 6, 6, 0, 8, 8, 0, 7 }; // Font0 default metric
     const IFont* _font = &fonts::Font0;
+
+    emoji_draw_cb_t _emoji_draw_cb = nullptr;
 
     std::shared_ptr<RunTimeFont> _runtime_font;  // run-time generated font
     std::shared_ptr<DataWrapper> _font_file;  // run-time font file
@@ -1030,6 +1104,7 @@ namespace lgfx
       else
       {
         if (     dst_depth == rgb565_2Byte) { pc.fp_copy = pixelcopy_t::copy_rgb_fast<swap565_t, T>; }
+        else if (dst_depth == rgb565_nonswapped) { pc.fp_copy = pixelcopy_t::copy_rgb_fast<rgb565_t, T>; }
         else if (dst_depth == rgb332_1Byte) { pc.fp_copy = pixelcopy_t::copy_rgb_fast<rgb332_t, T>; }
         else                                { pc.fp_copy = pixelcopy_t::copy_rgb_fast<grayscale_t, T>; }
       }
@@ -1261,7 +1336,28 @@ namespace lgfx
     static void make_rotation_matrix(float* result, float dst_x, float dst_y, float src_x, float src_y, float angle, float zoom_x, float zoom_y);
 
     void read_rect(int32_t x, int32_t y, int32_t w, int32_t h, void* dst, pixelcopy_t* param);
+
+//----------------------------------------------------------------------------
+
+    bool clampArea(int32_t *xlo, int32_t *ylo, int32_t *xhi, int32_t *yhi);
+
+    rgb888_t map_gradient( float value, float start, float end, const rgb888_t *colors, uint32_t colors_count );
+    rgb888_t map_gradient( float value, float start, float end, const colors_t gradient );
+
     void draw_gradient_line( int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t colorstart, uint32_t colorend );
+    void draw_gradient_line( int32_t x0, int32_t y0, int32_t x1, int32_t y1, const colors_t gradient );
+
+    void draw_wedgeline         (float x0, float y0, float x1, float y1, float r0, float r1, const uint32_t fg_color);
+    void draw_gradient_wedgeline(float x0, float y0, float x1, float y1, float r0, float r1, const colors_t gradient );
+
+    void fill_rect_radial_gradient(int32_t x, int32_t y, uint32_t w, uint32_t h, const colors_t gradient);
+    void fill_rect_radial_gradient(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint32_t colorstart, const uint32_t colorend );
+    void fill_rect_linear_gradient(int32_t x, int32_t y, uint32_t w, uint32_t h, const colors_t gradient, fill_style_t style=VLINEAR );
+    void fill_rect_gradient(int32_t x, int32_t y, uint32_t w, uint32_t h, const colors_t gradient, fill_style_t style=RADIAL );
+    void fill_rect_gradient(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint32_t colorstart, const uint32_t colorend, fill_style_t style=RADIAL );
+
+//----------------------------------------------------------------------------
+
     void fill_arc_helper(int32_t cx, int32_t cy, int32_t oradius_x, int32_t iradius_x, int32_t oradius_y, int32_t iradius_y, float start, float end);
     void draw_bezier_helper(int32_t x0, int32_t y0, int32_t x1, int32_t y1, int32_t x2, int32_t y2);
     void draw_bitmap(int32_t x, int32_t y, const uint8_t *bitmap, int32_t w, int32_t h, uint32_t fg_rawcolor, uint32_t bg_rawcolor = ~0u);
@@ -1276,14 +1372,14 @@ namespace lgfx
     void push_image_affine_aa(const float* matrix, int32_t w, int32_t h, pixelcopy_t *pc);
     void push_image_affine_aa(const float* matrix, pixelcopy_t *pre_pc, pixelcopy_t *post_pc);
 
-    uint16_t decodeUTF8(uint8_t c);
+    uint32_t decodeUTF8(uint8_t c);
 
     size_t printNumber(unsigned long n, uint8_t base);
     size_t printFloat(double number, uint8_t digits);
     size_t draw_string(const char *string, int32_t x, int32_t y, textdatum_t datum, const IFont* font = nullptr);
     int32_t text_width(const char *string, const IFont* font, FontMetrics* metrics);
-    bool load_font(lgfx::DataWrapper* data);
-    bool load_font_with_path(const char *path);
+    bool load_font(lgfx::DataWrapper* data, IFont::font_type_t font_type);
+    bool load_font_with_path(const char *path, IFont::font_type_t font_type);
 
     static void tmpBeginTransaction(LGFXBase* lgfx)
     {
@@ -1326,7 +1422,7 @@ namespace lgfx
 
     bool init(void)               { return init_impl(true , true); };
     bool begin(void)              { return init_impl(true , true); };
-    bool init_without_reset(void) { return init_impl(false, false); };
+    bool init_without_reset(bool clear = false) { return init_impl(false, clear); };
     board_t getBoard(void) const { return _board; }
     void initBus(void);
     void releaseBus(void);

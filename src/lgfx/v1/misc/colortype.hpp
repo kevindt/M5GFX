@@ -29,6 +29,8 @@ namespace lgfx
 {
  inline namespace v1
  {
+# pragma GCC diagnostic push
+# pragma GCC diagnostic ignored "-Warray-bounds"
 //----------------------------------------------------------------------------
 
 #if defined ( _MSVC_LANG )
@@ -711,50 +713,60 @@ namespace lgfx
       switch (dst_depth) {
       case argb8888_4Byte: return color_convert<bgra8888_t, rgb332_t>;
       case rgb888_3Byte  : return color_convert<bgr888_t  , rgb332_t>;
+      case rgb888_nonswapped: return color_convert<rgb888_t, rgb332_t>;
       case rgb666_3Byte  : return color_convert<bgr666_t  , rgb332_t>;
       case rgb565_2Byte  : return color_convert<swap565_t , rgb332_t>;
       case rgb332_1Byte  : return no_convert;
       case grayscale_8bit: return color_convert<grayscale_t, rgb332_t>;
+      case rgb565_nonswapped: return color_convert<rgb565_t , rgb332_t>;
       default: break;
       }
     } else if (std::is_same<TSrc, rgb888_t>::value || std::is_same<TSrc, uint32_t>::value) {
       switch (dst_depth) {
       case argb8888_4Byte: return color_convert<bgra8888_t, rgb888_t>;
       case rgb888_3Byte  : return getSwap24;
+      case rgb888_nonswapped: return no_convert;
       case rgb666_3Byte  : return color_convert<bgr666_t  , rgb888_t>;
       case rgb565_2Byte  : return color_convert<swap565_t , rgb888_t>;
       case rgb332_1Byte  : return color_convert<rgb332_t  , rgb888_t>;
       case grayscale_8bit: return color_convert<grayscale_t,rgb888_t>;
+      case rgb565_nonswapped: return color_convert<rgb565_t , rgb888_t>;
       default: break;
       }
     } else if (std::is_same<TSrc, argb8888_t>::value) {
       switch (dst_depth) {
       case argb8888_4Byte: return getSwap32;
       case rgb888_3Byte  : return color_convert<bgr888_t , rgb888_t>;
+      case rgb888_nonswapped: return no_convert;
       case rgb666_3Byte  : return color_convert<bgr666_t , rgb888_t>;
       case rgb565_2Byte  : return color_convert<swap565_t, rgb888_t>;
       case rgb332_1Byte  : return color_convert<rgb332_t , rgb888_t>;
       case grayscale_8bit: return color_convert<grayscale_t,rgb888_t>;
+      case rgb565_nonswapped: return color_convert<rgb565_t , rgb888_t>;
       default: break;
       }
     } else if (std::is_same<TSrc, bgr888_t>::value) {
       switch (dst_depth) {
       case argb8888_4Byte: return color_convert<bgra8888_t, bgr888_t>;
       case rgb888_3Byte  : return no_convert;
+      case rgb888_nonswapped: return color_convert<rgb888_t, bgr888_t>;
       case rgb666_3Byte  : return color_convert<bgr666_t  , bgr888_t>;
       case rgb565_2Byte  : return color_convert<swap565_t , bgr888_t>;
       case rgb332_1Byte  : return color_convert<rgb332_t  , bgr888_t>;
       case grayscale_8bit: return color_convert<grayscale_t,bgr888_t>;
+      case rgb565_nonswapped: return color_convert<rgb565_t , bgr888_t>;
       default: break;
       }
     } else { // if (std::is_same<TSrc, rgb565_t>::value || std::is_same<TSrc, uint16_t>::value || std::is_same<TSrc, int>::value)
       switch (dst_depth) {
       case argb8888_4Byte: return color_convert<bgra8888_t, rgb565_t>;
       case rgb888_3Byte  : return color_convert<bgr888_t  , rgb565_t>;
+      case rgb888_nonswapped: return color_convert<rgb888_t, rgb565_t>;
       case rgb666_3Byte  : return color_convert<bgr666_t  , rgb565_t>;
       case rgb565_2Byte  : return getSwap16;
       case rgb332_1Byte  : return color_convert<rgb332_t  , rgb565_t>;
       case grayscale_8bit: return color_convert<grayscale_t,rgb565_t>;
+      case rgb565_nonswapped: return no_convert;
       default: break;
       }
     }
@@ -770,12 +782,12 @@ namespace lgfx
 
   struct color_conv_t
   {
-    uint32_t (*convert_argb8888)(uint32_t);
-    uint32_t (*convert_bgr888)(uint32_t);
-    uint32_t (*convert_rgb888)(uint32_t);
-    uint32_t (*convert_rgb565)(uint32_t);
-    uint32_t (*convert_rgb332)(uint32_t);
-    uint32_t (*revert_rgb888)(uint32_t);
+    uint32_t (*convert_argb8888)(uint32_t) = nullptr;
+    uint32_t (*convert_bgr888)(uint32_t) = nullptr;
+    uint32_t (*convert_rgb888)(uint32_t) = nullptr;
+    uint32_t (*convert_rgb565)(uint32_t) = nullptr;
+    uint32_t (*convert_rgb332)(uint32_t) = nullptr;
+    uint32_t (*revert_rgb888)(uint32_t) = nullptr;
     uint32_t colormask;
     union
     {
@@ -833,13 +845,15 @@ namespace lgfx
       convert_bgr888   = get_fp_convert_src<bgr888_t  >(depth_);
 
       switch (depth_) {
-      case argb8888_4Byte: revert_rgb888 = color_convert<rgb888_t, bgra8888_t >; break;
-      case rgb888_3Byte:   revert_rgb888 = color_convert<rgb888_t, bgr888_t   >; break;
-      case rgb666_3Byte:   revert_rgb888 = color_convert<rgb888_t, bgr666_t   >; break;
-      case rgb565_2Byte:   revert_rgb888 = color_convert<rgb888_t, swap565_t  >; break;
-      case rgb332_1Byte:   revert_rgb888 = color_convert<rgb888_t, rgb332_t   >; break;
-      case grayscale_8bit: revert_rgb888 = color_convert<rgb888_t, grayscale_t>; break;
-      default:             revert_rgb888 = no_convert;
+      case argb8888_4Byte:    revert_rgb888 = color_convert<rgb888_t, bgra8888_t >; break;
+      case rgb888_3Byte:      revert_rgb888 = color_convert<rgb888_t, bgr888_t   >; break;
+      case rgb888_nonswapped: revert_rgb888 = no_convert; break;
+      case rgb666_3Byte:      revert_rgb888 = color_convert<rgb888_t, bgr666_t   >; break;
+      case rgb565_2Byte:      revert_rgb888 = color_convert<rgb888_t, swap565_t  >; break;
+      case rgb332_1Byte:      revert_rgb888 = color_convert<rgb888_t, rgb332_t   >; break;
+      case grayscale_8bit:    revert_rgb888 = color_convert<rgb888_t, grayscale_t>; break;
+      case rgb565_nonswapped: revert_rgb888 = color_convert<rgb888_t, rgb565_t   >; break;
+      default:                revert_rgb888 = no_convert;
       }
     }
 
@@ -936,9 +950,18 @@ namespace lgfx
     uint_fast16_t _b8a;
   };
 
+
+  struct colors_t
+  {
+    const rgb888_t *colors;
+    const uint32_t count;
+  };
+
+
 //----------------------------------------------------------------------------
 #undef LGFX_INLINE
 
+# pragma GCC diagnostic pop
  }
 }
 

@@ -36,7 +36,7 @@
 #include <stdint.h>
 #include <math.h>
 
-#include "miniz.h"
+#include "lgfx_miniz.h"
 #include "lgfx_pngle.h"
 
 #include "pgmspace.h"
@@ -109,7 +109,7 @@ struct _pngle_t {
   size_t  avail_out;
   uint32_t out_buf[LGFX_PNGLE_OUTBUF_LEN >> 2]; // out_buf + read_buf (Do not change the order)
   uint8_t read_buf[LGFX_PNGLE_READBUF_LEN];
-  tinfl_decompressor inflator; // 11000 bytes
+  lgfx_tinfl_decompressor inflator; // 11000 bytes
   uint8_t lz_buf[TINFL_LZ_DICT_SIZE]; // 32768 bytes
 };
 
@@ -170,7 +170,7 @@ pngle_ihdr_t *lgfx_pngle_get_ihdr(pngle_t *pngle)
   return &pngle->hdr;
 }
 
-static void make_pixels(pngle_t *pngle, const uint8_t* buf, uint32_t* rgbbuf, size_t len)
+static void make_pixels(pngle_t *pngle, const uint8_t* buf, uint32_t* rgbbuf, size_t len, size_t bit_offset)
 {
   size_t depth = pngle->hdr.depth;
   uint32_t* argb32 = rgbbuf - 1;
@@ -223,7 +223,7 @@ static void make_pixels(pngle_t *pngle, const uint8_t* buf, uint32_t* rgbbuf, si
   else
   {
     size_t mask = ((1 << depth) - 1);
-    size_t shift = 8;
+    size_t shift = 8 - bit_offset;
     size_t b = buf[0];
     do
     {
@@ -368,7 +368,8 @@ static int pngle_on_data(pngle_t *pngle, uint8_t *lzbuf, size_t len, size_t outb
     do
     {
       if (out_len > scanline_pixels - out_pos) { out_len = scanline_pixels - out_pos; }
-      make_pixels(pngle, &scanline[(out_pos * pngle->channels * pngle->hdr.depth) >> 3], pngle->out_buf, out_len);
+      size_t bit_pos = out_pos * pngle->channels * pngle->hdr.depth;
+      make_pixels(pngle, &scanline[bit_pos >> 3], pngle->out_buf, out_len, bit_pos & 7);
       pngle->draw_callback(pngle->user_data, draw_x + out_pos * div_x, pngle->drawing_y, div_x, out_len, (const uint8_t*)pngle->out_buf);
 
       out_pos += out_len;
@@ -405,7 +406,7 @@ int lgfx_pngle_prepare(pngle_t *pngle, lgfx_pngle_read_callback_t read_cb, void*
   pngle->avail_out = TINFL_LZ_DICT_SIZE;
   pngle->filter_type = ~0;
   pngle->trans_color = LGFX_PNGLE_NON_TRANS_COLOR;
-  tinfl_init(&pngle->inflator);
+  lgfx_tinfl_init(&pngle->inflator);
 
   if (pngle->read_callback(user_data, pngle->read_buf, 29) != 29
    || memcmp_P(pngle->read_buf, png_header, sizeof(png_header))) return PNGLE_ERROR("Incorrect PNG signature");
@@ -520,19 +521,19 @@ int lgfx_pngle_decomp(pngle_t *pngle, lgfx_pngle_draw_callback_t draw_cb)
           size_t in_bytes = len;
           size_t out_bytes = pngle->avail_out;
 
-          // XXX: tinfl_decompress always requires (next_out - lz_buf + avail_out) == TINFL_LZ_DICT_SIZE
-          tinfl_status status = tinfl_decompress(&pngle->inflator, (const mz_uint8*)&read_buf[in_pos], &in_bytes, pngle->lz_buf, (mz_uint8*)pngle->next_out, &out_bytes, TINFL_FLAG_HAS_MORE_INPUT | TINFL_FLAG_PARSE_ZLIB_HEADER);
+          // XXX: lgfx_tinfl_decompress always requires (next_out - lz_buf + avail_out) == TINFL_LZ_DICT_SIZE
+          lgfx_tinfl_status status = lgfx_tinfl_decompress(&pngle->inflator, (const lgfx_mz_uint8*)&read_buf[in_pos], &in_bytes, pngle->lz_buf, (lgfx_mz_uint8*)pngle->next_out, &out_bytes, TINFL_FLAG_HAS_MORE_INPUT | TINFL_FLAG_PARSE_ZLIB_HEADER);
           if (status < TINFL_STATUS_DONE)
           {
             // Decompression failed.
-            debug_printf("[pngle] tinfl_decompress() failed with status %d!\n", status);
+            debug_printf("[pngle] lgfx_tinfl_decompress() failed with status %d!\n", status);
             return PNGLE_ERROR("Failed to decompress the IDAT stream");
           }
 
           len -= in_bytes;
           in_pos += in_bytes;
 
-        //debug_printf("[pngle]       tinfl_decompress\n");
+        //debug_printf("[pngle]       lgfx_tinfl_decompress\n");
         //debug_printf("[pngle]       => in_bytes %zd, out_bytes %zd, next_out %p, status %d\n", in_bytes, out_bytes, pngle->next_out, status);
 
           if (out_bytes)

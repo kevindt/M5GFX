@@ -31,13 +31,31 @@ Contributors:
 #include <soc/lcd_cam_reg.h>
 #include <soc/lcd_cam_struct.h>
 
-#include <soc/gdma_channel.h>
+#if __has_include(<soc/gdma_channel.h>)
+ #include <soc/gdma_channel.h>
+#elif __has_include(<hal/gdma_channel.h>)
+ #include <hal/gdma_channel.h>
+#endif
 #include <soc/gdma_reg.h>
 #if !defined (DMA_OUT_LINK_CH0_REG)
   #define DMA_OUT_LINK_CH0_REG       GDMA_OUT_LINK_CH0_REG
   #define DMA_OUTFIFO_STATUS_CH0_REG GDMA_OUTFIFO_STATUS_CH0_REG
   #define DMA_OUTLINK_START_CH0      GDMA_OUTLINK_START_CH0
   #define DMA_OUTFIFO_EMPTY_CH0      GDMA_OUTFIFO_EMPTY_L3_CH0
+#endif
+
+#if defined (ESP_IDF_VERSION_VAL) && (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0))
+ #define LGFX_GPIO_PAD_SELECT(pin)      rom_gpio_pad_select_gpio((gpio_num_t)(pin))
+ #define LGFX_GPIO_MATRIX_OUT(pin, sig) rom_gpio_matrix_out((gpio_num_t)(pin), (sig), 0, 0)
+#else
+ #define LGFX_GPIO_PAD_SELECT(pin)      gpio_pad_select_gpio((gpio_num_t)(pin))
+ #define LGFX_GPIO_MATRIX_OUT(pin, sig) gpio_matrix_out((gpio_num_t)(pin), (sig), 0, 0)
+#endif
+
+#if ( ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 3, 0) )
+ #if !defined (LCD_CAM_LCD_UPDATE)
+  #define LCD_CAM_LCD_UPDATE LCD_CAM_LCD_UPDATE_REG
+ #endif
 #endif
 
 namespace lgfx
@@ -62,29 +80,37 @@ namespace lgfx
 
   bool Bus_Parallel16::init(void)
   {
+    // esp_lcd_new_i80_bus does not configure pad direction / open-drain, so
+    // normalize the data pins as push-pull GPIO outputs first (same
+    // normalization used by Bus_EPD).
+    for (int pin : _cfg.pin_data)
+    {
+      lgfx::pinMode(pin, pin_mode_t::output);
+    }
+
     _init_pin();
 
     for (size_t i = 0; i < 3; ++i)
     {
       int32_t pin = _cfg.pin_ctrl[i];
       if (pin < 0) { continue; }
-      gpio_pad_select_gpio(pin);
+      LGFX_GPIO_PAD_SELECT(pin);
       gpio_hi(pin);
       gpio_set_direction((gpio_num_t)pin, GPIO_MODE_OUTPUT);
     }
 
-    gpio_matrix_out(_cfg.pin_rs, LCD_DC_IDX, 0, 0);
-    gpio_matrix_out(_cfg.pin_wr, LCD_PCLK_IDX, 0, 0);
+    LGFX_GPIO_MATRIX_OUT(_cfg.pin_rs, LCD_DC_IDX);
+    LGFX_GPIO_MATRIX_OUT(_cfg.pin_wr, LCD_PCLK_IDX);
 
     esp_lcd_i80_bus_config_t bus_config;
     memset(&bus_config, 0, sizeof(esp_lcd_i80_bus_config_t));
     bus_config.clk_src = lcd_clock_source_t::LCD_CLK_SRC_PLL160M; // IDFのバージョンによってenumの値が異なるので注意
-    bus_config.dc_gpio_num = _cfg.pin_rs;
-    bus_config.wr_gpio_num = _cfg.pin_wr;
+    bus_config.dc_gpio_num = (gpio_num_t)_cfg.pin_rs;
+    bus_config.wr_gpio_num = (gpio_num_t)_cfg.pin_wr;
     for (int i = 0; i < 8; ++i)
     {
-      bus_config.data_gpio_nums[i  ] = _cfg.pin_data[i+8];
-      bus_config.data_gpio_nums[i+8] = _cfg.pin_data[i  ];
+      bus_config.data_gpio_nums[i  ] = (gpio_num_t)_cfg.pin_data[i+8];
+      bus_config.data_gpio_nums[i+8] = (gpio_num_t)_cfg.pin_data[i  ];
     }
     bus_config.bus_width = 16;
     bus_config.max_transfer_bytes = 4092;
@@ -142,8 +168,8 @@ namespace lgfx
       auto idx_base = LCD_DATA_OUT0_IDX;
       for (size_t i = 0; i < 8; ++i)
       {
-        gpio_matrix_out(pins[i]  , idx_base + i+8, 0, 0);
-        gpio_matrix_out(pins[i+8], idx_base + i  , 0, 0);
+        LGFX_GPIO_MATRIX_OUT(pins[i]  , idx_base + i+8);
+        LGFX_GPIO_MATRIX_OUT(pins[i+8], idx_base + i  );
       }
     }
   }
@@ -178,7 +204,7 @@ namespace lgfx
     // dev->lcd_user.lcd_bit_order = false;
     // dev->lcd_user.lcd_8bits_order = false;
 
-    dev->lcd_user.val = LCD_CAM_LCD_2BYTE_EN | LCD_CAM_LCD_CMD | LCD_CAM_LCD_UPDATE_REG;
+    dev->lcd_user.val = LCD_CAM_LCD_2BYTE_EN | LCD_CAM_LCD_CMD | LCD_CAM_LCD_UPDATE;
 
     _cache_flip = _cache[0];
   }
@@ -210,7 +236,7 @@ namespace lgfx
     dev->lcd_cmd_val.lcd_cmd_value = _align_data;
     auto reg_lcd_user = &(dev->lcd_user.val);
     while (*reg_lcd_user & LCD_CAM_LCD_START) {}
-    *reg_lcd_user = LCD_CAM_LCD_2BYTE_EN | LCD_CAM_LCD_CMD | LCD_CAM_LCD_UPDATE_REG | LCD_CAM_LCD_START;
+    *reg_lcd_user = LCD_CAM_LCD_2BYTE_EN | LCD_CAM_LCD_CMD | LCD_CAM_LCD_UPDATE | LCD_CAM_LCD_START;
   }
 
   bool Bus_Parallel16::writeCommand(uint32_t data, uint_fast8_t bit_length)
@@ -227,12 +253,12 @@ namespace lgfx
     if (bit_length <= 16)
     {
       while (*reg_lcd_user & LCD_CAM_LCD_START) {}
-      *reg_lcd_user = LCD_CAM_LCD_2BYTE_EN | LCD_CAM_LCD_CMD | LCD_CAM_LCD_UPDATE_REG | LCD_CAM_LCD_START;
+      *reg_lcd_user = LCD_CAM_LCD_2BYTE_EN | LCD_CAM_LCD_CMD | LCD_CAM_LCD_UPDATE | LCD_CAM_LCD_START;
       return true;
     }
 
     while (*reg_lcd_user & LCD_CAM_LCD_START) {}
-    *reg_lcd_user = LCD_CAM_LCD_CMD_2_CYCLE_EN | LCD_CAM_LCD_2BYTE_EN | LCD_CAM_LCD_CMD | LCD_CAM_LCD_UPDATE_REG | LCD_CAM_LCD_START;
+    *reg_lcd_user = LCD_CAM_LCD_CMD_2_CYCLE_EN | LCD_CAM_LCD_2BYTE_EN | LCD_CAM_LCD_CMD | LCD_CAM_LCD_UPDATE | LCD_CAM_LCD_START;
     return true;
   }
 
@@ -247,7 +273,7 @@ namespace lgfx
       _has_align_data = false;
       dev->lcd_cmd_val.val = _align_data | (data << 8);
       while (*reg_lcd_user & LCD_CAM_LCD_START) {}
-      *reg_lcd_user = LCD_CAM_LCD_2BYTE_EN | LCD_CAM_LCD_CMD | LCD_CAM_LCD_UPDATE_REG | LCD_CAM_LCD_START;
+      *reg_lcd_user = LCD_CAM_LCD_2BYTE_EN | LCD_CAM_LCD_CMD | LCD_CAM_LCD_UPDATE | LCD_CAM_LCD_START;
       if (--bytes == 0) { return; }
       data >>= 8;
     }
@@ -258,11 +284,11 @@ namespace lgfx
       if (bytes == 4)
       {
         while (*reg_lcd_user & LCD_CAM_LCD_START) {}
-        *reg_lcd_user = LCD_CAM_LCD_CMD_2_CYCLE_EN | LCD_CAM_LCD_2BYTE_EN | LCD_CAM_LCD_CMD | LCD_CAM_LCD_UPDATE_REG | LCD_CAM_LCD_START;
+        *reg_lcd_user = LCD_CAM_LCD_CMD_2_CYCLE_EN | LCD_CAM_LCD_2BYTE_EN | LCD_CAM_LCD_CMD | LCD_CAM_LCD_UPDATE | LCD_CAM_LCD_START;
         return;
       }
       while (*reg_lcd_user & LCD_CAM_LCD_START) {}
-      *reg_lcd_user = LCD_CAM_LCD_2BYTE_EN | LCD_CAM_LCD_CMD | LCD_CAM_LCD_UPDATE_REG | LCD_CAM_LCD_START;
+      *reg_lcd_user = LCD_CAM_LCD_2BYTE_EN | LCD_CAM_LCD_CMD | LCD_CAM_LCD_UPDATE | LCD_CAM_LCD_START;
       if (bytes == 2) { return; }
       data >>= 16;
     }
@@ -414,7 +440,7 @@ namespace lgfx
 
         while (*_dma_outstatus_reg & DMA_OUTFIFO_EMPTY_CH0 ) {}
 
-        *reg_lcd_user = LCD_CAM_LCD_ALWAYS_OUT_EN | LCD_CAM_LCD_2BYTE_EN | LCD_CAM_LCD_CMD_2_CYCLE_EN | LCD_CAM_LCD_DOUT | LCD_CAM_LCD_CMD | LCD_CAM_LCD_UPDATE_REG | LCD_CAM_LCD_START;
+        *reg_lcd_user = LCD_CAM_LCD_ALWAYS_OUT_EN | LCD_CAM_LCD_2BYTE_EN | LCD_CAM_LCD_CMD_2_CYCLE_EN | LCD_CAM_LCD_DOUT | LCD_CAM_LCD_CMD | LCD_CAM_LCD_UPDATE | LCD_CAM_LCD_START;
       } while (length & ~1u);
     }
     if (length)
@@ -429,7 +455,7 @@ namespace lgfx
     if (_has_align_data) { _send_align_data(); }
     wait();
     _init_pin(true);
-    gpio_matrix_out(_cfg.pin_rs, 0x100, 0, 0);
+    LGFX_GPIO_MATRIX_OUT(_cfg.pin_rs, 0x100);
     gpio_lo(_cfg.pin_rd);
   }
 
@@ -437,7 +463,7 @@ namespace lgfx
   {
     gpio_hi(_cfg.pin_rd);
     _init_pin();
-    gpio_matrix_out(_cfg.pin_rs, LCD_DC_IDX, 0, 0);
+    LGFX_GPIO_MATRIX_OUT(_cfg.pin_rs, LCD_DC_IDX);
   }
 
   void Bus_Parallel16::_read_bytes(uint8_t* dst, uint32_t length)
