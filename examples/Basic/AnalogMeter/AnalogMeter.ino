@@ -24,6 +24,7 @@ M5GFX display;
 // M5UnitPoEP4HDMI display; // 1280x720@60 or 1920x1080@30 only; default 1280x720@60
 
 
+
 static constexpr float deg_to_rad = 0.017453292519943295769236907684886;
 static constexpr int TFT_METER_GREY = 0x5AEB;
 static constexpr int LOOP_PERIOD = 35; // Display updates every 35 ms
