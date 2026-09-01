@@ -92,7 +92,10 @@ namespace lgfx // This should not be changed to "m5gfx"
     , board_M5ModuleDisplay = 199
     , board_M5ModuleRCA = 200
     , board_M5UnitPoEP4HDMI = 201
-    , board_WaveshareS3_146 = 202
+
+///  non-M5 display
+    , board_WaveshareS3_146 = 254
+    
 
     , board_FrameBuffer = 512
     };
